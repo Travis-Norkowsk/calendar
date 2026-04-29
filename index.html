@@ -75,24 +75,10 @@
 
 <script>
 
-// 🔥 RELIABLE PROXY METHOD (with fallback)
+// ✅ FIXED ICS FETCH (single reliable proxy)
 const rawIcs = "https://outlook.office365.com/owa/calendar/9663133db0ff4bf5803e60b3e4bc8d13@campbellpress.com/08f4cb50093246e49c76c256f225f0371883905075519799792/calendar.ics";
 
-const proxies = [
-  "https://api.allorigins.win/raw?url=",
-  "https://corsproxy.io/?"
-];
-
-function fetchICS() {
-  return fetch(proxies[0] + rawIcs)
-    .then(res => {
-      if (!res.ok) throw new Error("Primary proxy failed");
-      return res.text();
-    })
-    .catch(() => {
-      return fetch(proxies[1] + rawIcs).then(res => res.text());
-    });
-}
+const icsUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(rawIcs);
 
 const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
@@ -130,7 +116,9 @@ function getDaysInWeek(eventStart, eventEnd, weekStart) {
   return `${dayNames[unique[0]]}–${dayNames[unique[unique.length - 1]]}`;
 }
 
-fetchICS().then(data => {
+fetch(icsUrl)
+.then(res => res.text())
+.then(data => {
 
   const jcalData = ICAL.parse(data);
   const comp = new ICAL.Component(jcalData);
@@ -153,7 +141,6 @@ fetchICS().then(data => {
       end.setDate(end.getDate() - 1);
     }
 
-    // TODAY logic
     let checkDate = new Date(start);
     while (checkDate <= end) {
       if (checkDate.toDateString() === today.toDateString()) {
@@ -182,7 +169,6 @@ fetchICS().then(data => {
 
   });
 
-  // TODAY BOX
   const todayContainer = document.getElementById("today");
   const todayBox = document.createElement("div");
   todayBox.className = "today-box";
@@ -208,7 +194,6 @@ fetchICS().then(data => {
 
   todayContainer.appendChild(todayBox);
 
-  // WEEK VIEW
   const container = document.getElementById("calendar");
 
   for (let i = 0; i < 5; i++) {
@@ -266,5 +251,3 @@ fetchICS().then(data => {
 
 </body>
 </html>
-
-
