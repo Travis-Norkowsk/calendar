@@ -75,48 +75,56 @@
 
 <script>
 
-// ✅ YOUR WORKING PUBLIC ICS LINK
-const icsUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://outlook.office365.com/owa/calendar/9663133db0ff4bf5803e60b3e4bc8d13@campbellpress.com/61a2a6da4c664ab38e36068caeab96a614217089589047765428/calendar.ics");
+const rawICS = "https://outlook.office365.com/owa/calendar/9663133db0ff4bf5803e60b3e4bc8d13@campbellpress.com/61a2a6da4c664ab38e36068caeab96a614217089589047765428/calendar.ics";
 
 const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
+// 🔥 FIX: force UTC so days don’t shift
 function normalize(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
 }
 
 function getWeekStart(date) {
-  const d = normalize(date);
-  d.setDate(d.getDate() - d.getDay());
+  const d = new Date(date);
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
   return d;
 }
 
 function getDaysInWeek(eventStart, eventEnd, weekStart) {
   const days = [];
   const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 6);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
 
   let current = new Date(eventStart);
 
   while (current <= eventEnd) {
     if (current >= weekStart && current <= weekEnd) {
-      days.push(current.getDay());
+      days.push(current.getUTCDay());
     }
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
-
-  if (days.length === 0) return "";
 
   const unique = [...new Set(days)].sort((a,b)=>a-b);
 
   if (unique.length === 7) return "";
   if (unique.length === 1) return dayNames[unique[0]];
 
-  return `${dayNames[unique[0]]}–${dayNames[unique.length - 1]}`;
+  return `${dayNames[unique[0]]}–${dayNames[unique[unique.length - 1]]}`;
 }
 
-fetch(icsUrl)
-.then(res => res.text())
-.then(data => {
+// 🔥 FIX: fetch with fallback for phone compatibility
+async function fetchICS() {
+  try {
+    const res = await fetch(rawICS);
+    return await res.text();
+  } catch {
+    const proxy = "https://api.allorigins.win/raw?url=" + encodeURIComponent(rawICS);
+    const res = await fetch(proxy);
+    return await res.text();
+  }
+}
+
+fetchICS().then(data => {
 
   const jcalData = ICAL.parse(data);
   const comp = new ICAL.Component(jcalData);
@@ -136,23 +144,23 @@ fetch(icsUrl)
     let end = normalize(ev.endDate ? ev.endDate.toJSDate() : start);
 
     if (ev.endDate && ev.endDate.hour === 0) {
-      end.setDate(end.getDate() - 1);
+      end.setUTCDate(end.getUTCDate() - 1);
     }
 
     let checkDate = new Date(start);
     while (checkDate <= end) {
-      if (checkDate.toDateString() === today.toDateString()) {
+      if (checkDate.getTime() === today.getTime()) {
         todayEvents.push(ev);
         break;
       }
-      checkDate.setDate(checkDate.getDate() + 1);
+      checkDate.setUTCDate(checkDate.getUTCDate() + 1);
     }
 
     let current = new Date(start);
 
     while (current <= end) {
       const weekStart = getWeekStart(current);
-      const key = weekStart.toDateString();
+      const key = weekStart.toISOString();
 
       if (!grouped[key]) grouped[key] = [];
 
@@ -162,79 +170,58 @@ fetch(icsUrl)
         end: end
       });
 
-      current.setDate(current.getDate() + 7);
+      current.setUTCDate(current.getUTCDate() + 7);
     }
 
   });
 
-  // TODAY BOX
+  // TODAY
   const todayContainer = document.getElementById("today");
   const todayBox = document.createElement("div");
   todayBox.className = "today-box";
-
-  const header = document.createElement("div");
-  header.className = "today-header";
-  header.innerText = "TODAY";
-  todayBox.appendChild(header);
+  todayBox.innerHTML = `<div class="today-header">TODAY</div>`;
 
   if (todayEvents.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "no-events";
-    empty.innerText = "No scheduled items";
-    todayBox.appendChild(empty);
+    todayBox.innerHTML += `<div class="no-events">No scheduled items</div>`;
   } else {
     todayEvents.forEach(ev => {
-      const div = document.createElement("div");
-      div.className = "event";
-      div.innerText = ev.summary.replace("Work Their Plant", "").trim();
-      todayBox.appendChild(div);
+      todayBox.innerHTML += `<div class="event">${ev.summary.replace("Work Their Plant","").trim()}</div>`;
     });
   }
 
   todayContainer.appendChild(todayBox);
 
-  // WEEK VIEW
+  // WEEKS
   const container = document.getElementById("calendar");
 
   for (let i = 0; i < 5; i++) {
 
     const weekDate = new Date(currentWeekStart);
-    weekDate.setDate(weekDate.getDate() + (i * 7));
+    weekDate.setUTCDate(weekDate.getUTCDate() + (i * 7));
 
-    const key = weekDate.toDateString();
+    const key = weekDate.toISOString();
 
     const weekDiv = document.createElement("div");
     weekDiv.className = "week";
 
     if (i === 0) weekDiv.classList.add("current-week");
 
-    const title = document.createElement("div");
-    title.className = "week-title";
-
     const endDate = new Date(weekDate);
-    endDate.setDate(endDate.getDate() + 6);
+    endDate.setUTCDate(endDate.getUTCDate() + 6);
 
-    title.innerText = `Week of ${weekDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
-    weekDiv.appendChild(title);
+    weekDiv.innerHTML += `<div class="week-title">
+      Week of ${weekDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}
+    </div>`;
 
     const weekEvents = grouped[key] || [];
 
     if (weekEvents.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "no-events";
-      empty.innerText = "No scheduled items";
-      weekDiv.appendChild(empty);
+      weekDiv.innerHTML += `<div class="no-events">No scheduled items</div>`;
     } else {
       weekEvents.forEach(ev => {
-        const div = document.createElement("div");
-        div.className = "event";
-
         const label = getDaysInWeek(ev.date, ev.end, weekDate);
-        const clean = ev.title.replace("Work Their Plant", "").trim();
-
-        div.innerText = label ? `${clean} — ${label}` : clean;
-
-        weekDiv.appendChild(div);
+        const clean = ev.title.replace("Work Their Plant","").trim();
+        weekDiv.innerHTML += `<div class="event">${clean}${label ? " — " + label : ""}</div>`;
       });
     }
 
