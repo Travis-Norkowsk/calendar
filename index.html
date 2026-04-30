@@ -71,37 +71,37 @@
 <div id="today"></div>
 <div id="calendar"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/ical.js@1.4.0/build/ical.min.js"></script>
-
 <script>
 
-const rawICS = "https://outlook.office365.com/owa/calendar/9663133db0ff4bf5803e60b3e4bc8d13@campbellpress.com/61a2a6da4c664ab38e36068caeab96a614217089589047765428/calendar.ics";
+// 🔥 Now using your JSON file instead of Outlook
+const dataUrl = "calendar.json";
 
 const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-// 🔥 FIX: force UTC so days don’t shift
 function normalize(date) {
-  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  return d;
 }
 
 function getWeekStart(date) {
   const d = new Date(date);
-  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  d.setDate(d.getDate() - d.getDay());
   return d;
 }
 
 function getDaysInWeek(eventStart, eventEnd, weekStart) {
   const days = [];
   const weekEnd = new Date(weekStart);
-  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+  weekEnd.setDate(weekEnd.getDate() + 6);
 
   let current = new Date(eventStart);
 
   while (current <= eventEnd) {
     if (current >= weekStart && current <= weekEnd) {
-      days.push(current.getUTCDay());
+      days.push(current.getDay());
     }
-    current.setUTCDate(current.getUTCDate() + 1);
+    current.setDate(current.getDate() + 1);
   }
 
   const unique = [...new Set(days)].sort((a,b)=>a-b);
@@ -112,23 +112,9 @@ function getDaysInWeek(eventStart, eventEnd, weekStart) {
   return `${dayNames[unique[0]]}–${dayNames[unique[unique.length - 1]]}`;
 }
 
-// 🔥 FIX: fetch with fallback for phone compatibility
-async function fetchICS() {
-  try {
-    const res = await fetch(rawICS);
-    return await res.text();
-  } catch {
-    const proxy = "https://api.allorigins.win/raw?url=" + encodeURIComponent(rawICS);
-    const res = await fetch(proxy);
-    return await res.text();
-  }
-}
-
-fetchICS().then(data => {
-
-  const jcalData = ICAL.parse(data);
-  const comp = new ICAL.Component(jcalData);
-  const events = comp.getAllSubcomponents("vevent");
+fetch(dataUrl)
+.then(res => res.json())
+.then(events => {
 
   const grouped = {};
   const todayEvents = [];
@@ -136,70 +122,66 @@ fetchICS().then(data => {
   const today = normalize(new Date());
   const currentWeekStart = getWeekStart(today);
 
-  events.forEach(e => {
+  events.forEach(ev => {
 
-    const ev = new ICAL.Event(e);
-
-    let start = normalize(ev.startDate.toJSDate());
-    let end = normalize(ev.endDate ? ev.endDate.toJSDate() : start);
-
-    if (ev.endDate && ev.endDate.hour === 0) {
-      end.setUTCDate(end.getUTCDate() - 1);
-    }
+    let start = normalize(ev.start);
+    let end = normalize(ev.end);
 
     let checkDate = new Date(start);
+
     while (checkDate <= end) {
       if (checkDate.getTime() === today.getTime()) {
         todayEvents.push(ev);
         break;
       }
-      checkDate.setUTCDate(checkDate.getUTCDate() + 1);
+      checkDate.setDate(checkDate.getDate() + 1);
     }
 
     let current = new Date(start);
 
     while (current <= end) {
       const weekStart = getWeekStart(current);
-      const key = weekStart.toISOString();
+      const key = weekStart.toDateString();
 
       if (!grouped[key]) grouped[key] = [];
 
       grouped[key].push({
-        title: ev.summary,
+        title: ev.title,
         date: start,
         end: end
       });
 
-      current.setUTCDate(current.getUTCDate() + 7);
+      current.setDate(current.getDate() + 7);
     }
 
   });
 
-  // TODAY
+  // TODAY BOX
   const todayContainer = document.getElementById("today");
   const todayBox = document.createElement("div");
   todayBox.className = "today-box";
+
   todayBox.innerHTML = `<div class="today-header">TODAY</div>`;
 
   if (todayEvents.length === 0) {
     todayBox.innerHTML += `<div class="no-events">No scheduled items</div>`;
   } else {
     todayEvents.forEach(ev => {
-      todayBox.innerHTML += `<div class="event">${ev.summary.replace("Work Their Plant","").trim()}</div>`;
+      todayBox.innerHTML += `<div class="event">${ev.title}</div>`;
     });
   }
 
   todayContainer.appendChild(todayBox);
 
-  // WEEKS
+  // WEEK VIEW
   const container = document.getElementById("calendar");
 
   for (let i = 0; i < 5; i++) {
 
     const weekDate = new Date(currentWeekStart);
-    weekDate.setUTCDate(weekDate.getUTCDate() + (i * 7));
+    weekDate.setDate(weekDate.getDate() + (i * 7));
 
-    const key = weekDate.toISOString();
+    const key = weekDate.toDateString();
 
     const weekDiv = document.createElement("div");
     weekDiv.className = "week";
@@ -207,7 +189,7 @@ fetchICS().then(data => {
     if (i === 0) weekDiv.classList.add("current-week");
 
     const endDate = new Date(weekDate);
-    endDate.setUTCDate(endDate.getUTCDate() + 6);
+    endDate.setDate(endDate.getDate() + 6);
 
     weekDiv.innerHTML += `<div class="week-title">
       Week of ${weekDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}
@@ -220,8 +202,7 @@ fetchICS().then(data => {
     } else {
       weekEvents.forEach(ev => {
         const label = getDaysInWeek(ev.date, ev.end, weekDate);
-        const clean = ev.title.replace("Work Their Plant","").trim();
-        weekDiv.innerHTML += `<div class="event">${clean}${label ? " — " + label : ""}</div>`;
+        weekDiv.innerHTML += `<div class="event">${ev.title}${label ? " — " + label : ""}</div>`;
       });
     }
 
